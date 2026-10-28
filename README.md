@@ -8,8 +8,10 @@
 
 ```
 npm install
-node index.js
+npm start
 ```
+
+`npm start`는 `node --watch index.js`라 소스를 고치면 자동으로 재시작된다(Node 18.11+ 내장 기능) — 매번 수동으로 Ctrl+C → 재실행하던 걸 대신해 준다. 그냥 `node index.js`로 직접 띄워도 똑같이 동작하고 재시작만 안 될 뿐이다.
 
 종료는 Ctrl+C.
 
