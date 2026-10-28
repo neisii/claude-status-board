@@ -5,11 +5,15 @@ import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import stringWidth from 'string-width';
+import { STATUS_COLORS, resolveTheme } from './theme.js';
 
 const h = React.createElement;
 
 const POLL_MS = 10000;
 const MAX_CONTENT_WIDTH = 72;
+// 테두리·제목 색 테마. theme.js의 THEMES 키 중 하나(server-status-board와 같은 목록).
+const ACTIVE_THEME = 'rose';
+const theme = resolveTheme(ACTIVE_THEME);
 // title(1) + blank(1) + footnote(1) + border 위아래(2). groupLines 몫을 뺀 나머지 고정 줄 수
 // (미주와 groupLines 사이의 빈 줄은 더 이상 고정폭이 아니라 justifyContent: space-between이
 // 남는 공간만큼 알아서 채운다 — 그래서 여기 셈에서 뺐다).
@@ -17,12 +21,12 @@ const FIXED_CHROME_LINES = 5;
 
 // [라벨, 글자색] 순서가 그대로 화면에 묶어 보여줄 순서다(조치가 필요한 쪽을 위로).
 const GROUPS = [
-  ['blocked', '막힘', 'red'],
-  ['failed', '실패', 'red'],
-  ['working', '작업중', 'green'],
-  ['resident', '상주(루프 대기)', 'blue'],
-  ['idle', '대기', 'yellow'],
-  ['stopped', '종료', 'gray'],
+  ['blocked', '막힘', STATUS_COLORS.blocked],
+  ['failed', '실패', STATUS_COLORS.failed],
+  ['working', '작업중', STATUS_COLORS.working],
+  ['resident', '상주(루프 대기)', STATUS_COLORS.resident],
+  ['idle', '대기', STATUS_COLORS.idle],
+  ['stopped', '종료', STATUS_COLORS.stopped],
 ];
 
 function pad(n) {
@@ -203,12 +207,12 @@ function Board() {
   useInterval(poll, POLL_MS);
 
   let titleSuffix;
-  let titleColor = 'gray';
+  let titleColor = STATUS_COLORS.suffix;
   if (!lastUpdated) {
     titleSuffix = '(불러오는 중...)';
   } else if (lastError) {
     titleSuffix = `(${lastError} 갱신 실패, ${lastUpdated} 값 표시)`;
-    titleColor = 'red';
+    titleColor = STATUS_COLORS.error;
   } else {
     titleSuffix = `(${lastUpdated} 갱신)`;
   }
@@ -242,7 +246,7 @@ function Board() {
           ...pageEntries.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color })),
         ];
       })
-    : [{ text: '[...] 불러오는 중', color: 'gray' }]
+    : [{ text: '[...] 불러오는 중', color: STATUS_COLORS.suffix }]
   );
 
   const groupLinesMaxWidth = Math.max(0, ...groupLines.map((g) => stringWidth(g.text)));
@@ -258,7 +262,7 @@ function Board() {
     {
       flexDirection: 'column',
       borderStyle: 'round',
-      borderColor: 'cyan',
+      borderColor: theme.border,
       paddingX: 1,
       width: boardWidth,
       // 내용이 짧아도 처음부터 터미널 높이만큼 테두리를 늘려 둔다(좌우 테두리가 패널 바닥까지
@@ -277,10 +281,10 @@ function Board() {
         h(
           Box,
           null,
-          h(Text, { color: 'cyan' }, 'Claude 세션 현황  '),
+          h(Text, { color: theme.title }, 'Claude 세션 현황  '),
           h(Text, { color: titleColor }, titleSuffix),
         ),
-        hotkeyHint ? h(Text, { color: 'gray' }, hotkeyHint) : null,
+        hotkeyHint ? h(Text, { color: STATUS_COLORS.suffix }, hotkeyHint) : null,
       ),
       h(Box, { height: 1 }),
       ...groupLines.map((g, i) => h(Text, { key: `g${i}`, color: g.color, dimColor: Boolean(g.dim) }, g.text)),
@@ -288,7 +292,7 @@ function Board() {
     h(
       Box,
       { justifyContent: 'flex-end' },
-      h(Text, { color: 'magenta' }, footnoteTag),
+      h(Text, { color: STATUS_COLORS.footnote }, footnoteTag),
     ),
   );
 }

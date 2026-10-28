@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>claude-agents-board 테마 비교</title>
+<style>
+  body {
+    background: #282624;
+    color: #e5e5e5;
+    font-family: 'Consolas', 'D2Coding', monospace;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin-bottom: 20px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: #282624;
+    border-radius: 8px;
+    padding: 14px;
+    border: 2px solid #333;
+  }
+  .board {
+    background: #282624;
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .title-line { font-weight: bold; margin-bottom: 6px; }
+  .group-line { white-space: pre; }
+  .footnote { margin-top: 6px; text-align: right; }
+  .name { font-size: 13px; margin-top: 10px; color: #aaa; }
+  .hex { font-size: 11px; color: #777; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <h1>claude-agents-board 테마 후보 비교 (테두리 / 제목 색)</h1>
+  <div class="grid" id="grid"></div>
+<script>
+// server-status-board/theme.js와 같은 28개 목록(테두리/제목). 이 둘만 테마별로 바뀐다.
+const themes = [
+  { name: '체리(최초 적용본)', border: '#D946EF', title: '#3B82F6' },
+  { name: '오션/틸', border: '#06B6D4', title: '#0EA5E9' },
+  { name: '에메랄드/그린', border: '#10B981', title: '#22C55E' },
+  { name: '앰버/골드', border: '#F59E0B', title: '#FBBF24' },
+  { name: '슬레이트/모노', border: '#94A3B8', title: '#E2E8F0' },
+  { name: '인디고/바이올렛', border: '#6366F1', title: '#8B5CF6' },
+  { name: '로즈/코랄', border: '#FB7185', title: '#FDBA74' },
+  { name: '네이비/스카이 모노톤', border: '#1E40AF', title: '#93C5FD' },
+  { name: '선셋/피치', border: '#FB923C', title: '#FDE68A' },
+  { name: '민트/라임', border: '#34D399', title: '#A3E635' },
+  { name: '플럼/라벤더', border: '#A855F7', title: '#E9D5FF' },
+  { name: '틸/골드 대비', border: '#0D9488', title: '#FACC15' },
+  { name: '실버/브라이트', border: '#D1D5DB', title: '#F9FAFB' },
+  { name: '바이올렛/네온핑크', border: '#7C3AED', title: '#F472B6' },
+  { name: '카퍼/크림', border: '#B45309', title: '#FEF3C7' },
+  { name: '포레스트 나이트', border: '#166534', title: '#BBF7D0' },
+  { name: '아이스 블루', border: '#BAE6FD', title: '#38BDF8' },
+  { name: '와인/버건디', border: '#881337', title: '#FDA4AF' },
+  { name: '차콜/네온그린', border: '#374151', title: '#39FF14' },
+  { name: '피콕(기본값)', border: '#0E7490', title: '#67E8F9' },
+  { name: '로열 퍼플/골드', border: '#581C87', title: '#FACC15' },
+  { name: '웜 스톤(배경과 톤 맞춤)', border: '#57534E', title: '#D6D3D1' },
+  { name: '미드나잇 틸', border: '#042F2E', title: '#2DD4BF' },
+  { name: '블러시/모브', border: '#D8B4FE', title: '#FBCFE8' },
+  { name: '일렉트릭 블루/화이트', border: '#2563EB', title: '#FFFFFF' },
+  { name: '올리브/크림', border: '#4D7C0F', title: '#FEF9C3' },
+  { name: '옵시디언/아이스', border: '#111827', title: '#A5F3FC' },
+  { name: '캔디', border: '#F9A8D4', title: '#C4B5FD' },
+];
+
+// theme.js의 STATUS_COLORS — 테마와 무관하게 고정된 색(묶음별 상태색·미주). 모든 카드에 공통.
+const STATUS_COLORS = {
+  blocked: '#EF4444',
+  failed: '#EF4444',
+  working: '#22C55E',
+  resident: '#3B82F6',
+  idle: '#EAB308',
+  stopped: '#6B7280',
+  suffix: '#6B7280',
+  footnote: '#6B7280',
+};
+
+const grid = document.getElementById('grid');
+for (const t of themes) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.borderColor = t.border;
+  card.innerHTML = `
+    <div class="board" style="border:2px solid ${t.border}; border-radius:4px;">
+      <div class="title-line"><span style="color:${t.title}">Claude 세션 현황  </span><span style="color:${STATUS_COLORS.suffix}">(22:02:33 갱신)</span></div>
+      <div class="group-line" style="color:${STATUS_COLORS.working}">[작업중]</div>
+      <div class="group-line" style="color:${STATUS_COLORS.working}">  widget-master(방금)</div>
+      <div class="group-line" style="color:${STATUS_COLORS.idle}">[대기] (5개, n으로 펼치기)</div>
+      <div class="group-line" style="color:${STATUS_COLORS.stopped}">[종료] (8개, n으로 펼치기)</div>
+      <div class="footnote" style="color:${STATUS_COLORS.footnote}">🕐 시간: transcript 수정 시간 경과 추정값</div>
+    </div>
+    <div class="name">${t.name}</div>
+    <div class="hex">border ${t.border} / title ${t.title}</div>
+  `;
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>
