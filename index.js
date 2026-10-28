@@ -213,7 +213,7 @@ function Board() {
     titleSuffix = `(${lastUpdated} 갱신)`;
   }
 
-  const footnoteTag = '시간: transcript 수정 시간 경과 추정값';
+  const footnoteTag = '🕐 시간: transcript 수정 시간 경과 추정값';
   const titleText = `Claude 세션 현황  ${titleSuffix}`;
   const hotkeyHint = isRawModeSupported ? 'N키: Next' : '';
   const titleRowText = hotkeyHint ? `${titleText} ${hotkeyHint}` : titleText;
