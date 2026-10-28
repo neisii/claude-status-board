@@ -255,7 +255,13 @@ function Board() {
     stringWidth(footnoteTag),
     Math.min(MAX_CONTENT_WIDTH, groupLinesMaxWidth),
   );
-  const boardWidth = contentWidth + 2 /* paddingX 양쪽 */ + 2 /* borderStyle 양쪽 */;
+  // 제목 줄(특히 에러 문구 + 단축키 안내가 같이 붙을 때)이 터미널 실제 칸 수보다 넓은 boardWidth를
+  // 요구하면, Ink가 터미널보다 넓은 테두리를 그릴 수 없어 그 줄이 줄바꿈되면서 테두리가 깨진다
+  // (실측: 갱신 실패 문구 + "N키: Next"가 겹친 순간 테두리가 틀어졌다가 갱신 성공 후 문구가
+  // 짧아지면서 저절로 풀림). 그래서 터미널 칸 수를 넘지 않도록 최종 폭을 한 번 더 clamp한다.
+  const rawBoardWidth = contentWidth + 2 /* paddingX 양쪽 */ + 2 /* borderStyle 양쪽 */;
+  const terminalColumns = process.stdout.columns || rawBoardWidth;
+  const boardWidth = Math.max(4, Math.min(rawBoardWidth, terminalColumns));
 
   return h(
     Box,
