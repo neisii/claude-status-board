@@ -10,8 +10,10 @@ const h = React.createElement;
 
 const POLL_MS = 10000;
 const MAX_CONTENT_WIDTH = 72;
-// title(1) + blank(1) + blank(1) + footnote(1) + border 위아래(2). groupLines 몫을 뺀 나머지 고정 줄 수.
-const FIXED_CHROME_LINES = 6;
+// title(1) + blank(1) + footnote(1) + border 위아래(2). groupLines 몫을 뺀 나머지 고정 줄 수
+// (미주와 groupLines 사이의 빈 줄은 더 이상 고정폭이 아니라 justifyContent: space-between이
+// 남는 공간만큼 알아서 채운다 — 그래서 여기 셈에서 뺐다).
+const FIXED_CHROME_LINES = 5;
 
 // [라벨, 글자색] 순서가 그대로 화면에 묶어 보여줄 순서다(조치가 필요한 쪽을 위로).
 const GROUPS = [
@@ -260,23 +262,29 @@ function Board() {
       paddingX: 1,
       width: boardWidth,
       // 내용이 짧아도 처음부터 터미널 높이만큼 테두리를 늘려 둔다(좌우 테두리가 패널 바닥까지
-      // 이어진다) — 내용은 기본 정렬(flex-start)대로 위에서부터 채우고 남는 자리는 빈 칸으로 둔다.
+      // 이어진다). justifyContent: space-between으로 "위 블록"과 "미주"를 양 끝에 고정해서,
+      // 내용이 얼마나 짧든 미주가 항상 하단 테두리 바로 위 줄에 오게 한다(남는 자리는 둘
+      // 사이의 빈 칸으로 몰린다).
       height: terminalRows,
+      justifyContent: 'space-between',
     },
     h(
       Box,
-      { justifyContent: 'space-between' },
+      { flexDirection: 'column' },
       h(
         Box,
-        null,
-        h(Text, { color: 'cyan' }, 'Claude 세션 현황  '),
-        h(Text, { color: titleColor }, titleSuffix),
+        { justifyContent: 'space-between' },
+        h(
+          Box,
+          null,
+          h(Text, { color: 'cyan' }, 'Claude 세션 현황  '),
+          h(Text, { color: titleColor }, titleSuffix),
+        ),
+        hotkeyHint ? h(Text, { color: 'gray' }, hotkeyHint) : null,
       ),
-      hotkeyHint ? h(Text, { color: 'gray' }, hotkeyHint) : null,
+      h(Box, { height: 1 }),
+      ...groupLines.map((g, i) => h(Text, { key: `g${i}`, color: g.color, dimColor: Boolean(g.dim) }, g.text)),
     ),
-    h(Box, { height: 1 }),
-    ...groupLines.map((g, i) => h(Text, { key: `g${i}`, color: g.color, dimColor: Boolean(g.dim) }, g.text)),
-    h(Box, { height: 1 }),
     h(
       Box,
       { justifyContent: 'flex-end' },
