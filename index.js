@@ -18,6 +18,7 @@ const GROUPS = [
   ['blocked', '막힘', 'red'],
   ['failed', '실패', 'red'],
   ['working', '작업중', 'green'],
+  ['resident', '상주(루프 대기)', 'blue'],
   ['idle', '대기', 'yellow'],
   ['stopped', '종료', 'gray'],
 ];
@@ -62,9 +63,18 @@ function useInterval(callback, delayMs) {
 
 // pid가 있으면 지금 살아있는 세션이라 status(idle/busy)를 믿는다. pid가 없으면 마지막 state로 분류한다.
 // dev-session-launch SKILL.md 실측: state(특히 blocked)는 조회 순간의 스냅샷일 뿐이라 늦게 반영될 수 있다.
+//
+// status===idle이면서 state===working인 pid 보유 세션은 "작업중"도 "대기"도 아닌 별도 부류다
+// (실측 2026-10-29: patrol-master처럼 /loop로 긴 주기(예: 25분)마다 짧게 깨어나는 세션은 그
+// 틱 순간에만 busy이고 나머지 대부분은 idle/working으로 남는다 — 10초 폴링으로는 busy를
+// 거의 못 잡아 항상 "대기"로만 보여서, 지금 루프를 돌리는 중인데도 작업중 묶음에 전혀 안
+// 잡히는 문제가 있었다). architect-master도 같은 조건에 걸릴 수 있어 이름이 아니라 이
+// status/state 조합으로 판정한다.
 function categorize(rec) {
   if (rec.pid) {
-    return rec.status === 'busy' ? 'working' : 'idle';
+    if (rec.status === 'busy') return 'working';
+    if (rec.status === 'idle' && rec.state === 'working') return 'resident';
+    return 'idle';
   }
   if (rec.state === 'blocked') return 'blocked';
   if (rec.state === 'failed') return 'failed';
@@ -125,21 +135,50 @@ function groupAgents(records) {
   return byCategory;
 }
 
+// 렌더 쪽(groupLines)과 키 입력 핸들러(nextCursor)가 똑같은 pageSize를 써야 페이지 번호가
+// 어긋나지 않는다 — 그래서 이 계산을 한 곳에 모아 둔다. 펼친 묶음이 아닌 나머지는 묶음당
+// 한 줄(접힌 상태)만 차지하므로, 펼친 묶음에 쓸 수 있는 줄 수(pageSize)는 전체에서 그만큼과
+// 헤더 한 줄을 뺀 나머지다.
+function computeGroupLayout(byCategory, terminalRows) {
+  const nonEmptyGroups = byCategory ? GROUPS.filter(([key]) => byCategory.get(key).length > 0) : [];
+  const nonEmptyKeys = nonEmptyGroups.map(([key]) => key);
+  const availableForGroups = Math.max(1, terminalRows - FIXED_CHROME_LINES);
+  const otherGroupsCount = Math.max(0, nonEmptyGroups.length - 1);
+  const pageSize = Math.max(0, availableForGroups - otherGroupsCount - 1 /* 펼친 묶음 헤더 줄 */);
+  return { nonEmptyGroups, nonEmptyKeys, pageSize };
+}
+
+// n 입력 시 다음 자리를 계산한다: 지금 묶음에 다음 페이지가 있으면 그쪽으로, 마지막
+// 페이지였으면 다음 묶음의 첫 페이지로(한 바퀴 돌면 처음 묶음으로 돌아온다).
+function nextCursor(byCategory, prev) {
+  const terminalRows = process.stdout.rows || 24;
+  const { nonEmptyKeys, pageSize } = computeGroupLayout(byCategory, terminalRows);
+  if (nonEmptyKeys.length === 0) return prev;
+  const key = nonEmptyKeys.includes(prev.key) ? prev.key : nonEmptyKeys[0];
+  const entries = byCategory.get(key);
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(entries.length / pageSize)) : 1;
+  if (prev.page + 1 < totalPages) {
+    return { key, page: prev.page + 1 };
+  }
+  const idx = nonEmptyKeys.indexOf(key);
+  const nextKey = nonEmptyKeys[(idx + 1) % nonEmptyKeys.length];
+  return { key: nextKey, page: 0 };
+}
+
 function Board() {
   const [byCategory, setByCategory] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [lastError, setLastError] = useState(null);
   // 한 번에 한 묶음만 이름까지 펼쳐 보여주고(기본: 작업중), 나머지는 "[라벨] (N개)"로 접어 둔다.
-  const [expandedKey, setExpandedKey] = useState('working');
+  // 펼친 묶음도 한 화면에 다 못 들어가면 page로 나눠서 보여준다(n으로 다음 페이지, 마지막
+  // 페이지에서 n을 또 누르면 다음 묶음의 첫 페이지로 넘어간다).
+  const [cursor, setCursor] = useState({ key: 'working', page: 0 });
 
   const { isRawModeSupported } = useStdin();
   useInput(
     (input, key) => {
       if (input !== 'n' || !byCategory) return;
-      const nonEmptyKeys = GROUPS.filter(([k]) => byCategory.get(k).length > 0).map(([k]) => k);
-      if (nonEmptyKeys.length === 0) return;
-      const idx = nonEmptyKeys.indexOf(expandedKey);
-      setExpandedKey(nonEmptyKeys[(idx + 1) % nonEmptyKeys.length]);
+      setCursor((prev) => nextCursor(byCategory, prev));
     },
     { isActive: isRawModeSupported },
   );
@@ -177,38 +216,28 @@ function Board() {
   const hotkeyHint = isRawModeSupported ? 'N키: Next' : '';
   const titleRowText = hotkeyHint ? `${titleText} ${hotkeyHint}` : titleText;
 
-  const nonEmptyGroups = byCategory ? GROUPS.filter(([key]) => byCategory.get(key).length > 0) : [];
-  const nonEmptyKeys = nonEmptyGroups.map(([key]) => key);
-  const effectiveExpandedKey = nonEmptyKeys.includes(expandedKey) ? expandedKey : nonEmptyKeys[0];
-
-  // 터미널(분할 패널) 행 수보다 묶음 줄이 많아지면 테두리 위쪽이 화면 밖으로 밀려 올라간다(실측).
-  // 그래서 펼친 묶음의 이름 목록을, 패널에 다 들어가는 만큼만 보여주고 나머지는 "...그 외 N개 더"로 줄인다.
   const terminalRows = process.stdout.rows || 24;
-  const availableForGroups = Math.max(1, terminalRows - FIXED_CHROME_LINES);
-  const otherGroupsCount = Math.max(0, nonEmptyGroups.length - 1);
-  const budgetForEntries = Math.max(0, availableForGroups - otherGroupsCount - 1 /* 펼친 묶음 헤더 줄 */);
+  const { nonEmptyGroups, nonEmptyKeys, pageSize } = computeGroupLayout(byCategory, terminalRows);
+  const effectiveKey = nonEmptyKeys.includes(cursor.key) ? cursor.key : nonEmptyKeys[0];
 
+  // 펼친 묶음의 이름 목록을 pageSize만큼씩 나눠서, n으로 다음 페이지 → 마지막 페이지에서 또
+  // n을 누르면 다음 묶음의 첫 페이지로 넘어간다(nextCursor와 같은 계산을 써야 어긋나지 않는다).
   const groupLines = (byCategory
     ? nonEmptyGroups.flatMap(([key, label, color]) => {
         const entries = byCategory.get(key);
-        if (key !== effectiveExpandedKey) {
+        if (key !== effectiveKey) {
           return [{ text: `[${label}] (${entries.length}개, n으로 펼치기)`, color, dim: true }];
         }
-        if (entries.length <= budgetForEntries) {
-          return [
-            { text: `[${label}]`, color },
-            ...entries.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color })),
-          ];
-        }
-        if (budgetForEntries <= 0) {
+        if (pageSize <= 0) {
           return [{ text: `[${label}] (${entries.length}개, 화면 높이 부족해 숨김)`, color, dim: true }];
         }
-        const shown = entries.slice(0, budgetForEntries - 1);
-        const hiddenCount = entries.length - shown.length;
+        const totalPages = Math.max(1, Math.ceil(entries.length / pageSize));
+        const page = Math.min(cursor.page, totalPages - 1);
+        const pageEntries = entries.slice(page * pageSize, (page + 1) * pageSize);
+        const headerText = totalPages > 1 ? `[${label}] (${page + 1}/${totalPages}페이지)` : `[${label}]`;
         return [
-          { text: `[${label}]`, color },
-          ...shown.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color })),
-          { text: `  ...그 외 ${hiddenCount}개 더(화면 높이 부족)`, color, dim: true },
+          { text: headerText, color },
+          ...pageEntries.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color })),
         ];
       })
     : [{ text: '[...] 불러오는 중', color: 'gray' }]
@@ -224,7 +253,16 @@ function Board() {
 
   return h(
     Box,
-    { flexDirection: 'column', borderStyle: 'round', borderColor: 'cyan', paddingX: 1, width: boardWidth },
+    {
+      flexDirection: 'column',
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      paddingX: 1,
+      width: boardWidth,
+      // 내용이 짧아도 처음부터 터미널 높이만큼 테두리를 늘려 둔다(좌우 테두리가 패널 바닥까지
+      // 이어진다) — 내용은 기본 정렬(flex-start)대로 위에서부터 채우고 남는 자리는 빈 칸으로 둔다.
+      height: terminalRows,
+    },
     h(
       Box,
       { justifyContent: 'space-between' },
