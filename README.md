@@ -11,9 +11,9 @@ npm install
 npm start
 ```
 
-`npm start`는 `node --watch index.js`라 소스를 고치면 자동으로 재시작된다(Node 18.11+ 내장 기능) — 매번 수동으로 Ctrl+C → 재실행하던 걸 대신해 준다. 그냥 `node index.js`로 직접 띄워도 똑같이 동작하고 재시작만 안 될 뿐이다.
-
 종료는 Ctrl+C.
+
+소스를 고치는 중이면 `npm run dev`(`node --watch index.js`)로 띄운다 — 파일이 바뀌면 자동으로 재시작된다(Node 18.11+ 내장 기능). 다만 이 모드에서는 Ctrl+C를 **두 번** 눌러야 완전히 꺼진다: 이 보드는 `n` 키를 받으려고 터미널을 raw mode로 두기 때문에 첫 Ctrl+C는 시그널이 아니라 키 입력으로 보드(`index.js`)에 들어가 보드만 정상 종료시키고, `--watch`는 `Completed running 'index.js'. Waiting for file changes before restarting...`를 띄운 채 남는다. raw mode가 풀린 뒤의 두 번째 Ctrl+C가 watch·npm까지 끝낸다. 그래서 평소 띄워 두는 용도의 `npm start`는 `--watch` 없이 실행한다(`server-status-board`·`digital-clock-board`는 키 입력을 안 받아 raw mode가 아니므로 `npm start`가 `--watch`여도 Ctrl+C 한 번에 꺼진다).
 
 ## 화면 구성
 
