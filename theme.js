@@ -44,6 +44,7 @@ export const STATUS_COLORS = {
   working: '#22C55E', // green
   resident: '#3B82F6', // blue
   idle: '#EAB308', // yellow
+  done: '#9CA3AF', // light gray
   stopped: '#6B7280', // gray
   error: '#EF4444', // red — 제목 갱신 실패 표시
   suffix: '#6B7280', // gray — 제목 괄호 안 문구 기본색·단축키 안내 등 보조 텍스트

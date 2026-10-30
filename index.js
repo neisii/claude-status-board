@@ -10,6 +10,7 @@ import { STATUS_COLORS, resolveTheme } from './theme.js';
 const h = React.createElement;
 
 const POLL_MS = 10000;
+const NEXT_KEYS = new Set(['n', 'N', 'ㅜ']);
 const MAX_CONTENT_WIDTH = 72;
 // 테두리·제목 색 테마. theme.js의 THEMES 키 중 하나(server-status-board와 같은 목록).
 const ACTIVE_THEME = 'rose';
@@ -21,12 +22,13 @@ const FIXED_CHROME_LINES = 5;
 
 // [라벨, 글자색] 순서가 그대로 화면에 묶어 보여줄 순서다(조치가 필요한 쪽을 위로).
 const GROUPS = [
-  ['blocked', '막힘', STATUS_COLORS.blocked],
-  ['failed', '실패', STATUS_COLORS.failed],
-  ['working', '작업중', STATUS_COLORS.working],
-  ['resident', '상주(루프 대기)', STATUS_COLORS.resident],
-  ['idle', '대기', STATUS_COLORS.idle],
-  ['stopped', '종료', STATUS_COLORS.stopped],
+  ['blocked', '사용자응답대기', STATUS_COLORS.blocked],
+  ['failed', '작업수행실패', STATUS_COLORS.failed],
+  ['working', '작업수행중', STATUS_COLORS.working],
+  ['resident', '순환작업대기', STATUS_COLORS.resident],
+  ['idle', '작업지시대기', STATUS_COLORS.idle],
+  ['done', '작업수행완료', STATUS_COLORS.done],
+  ['stopped', '작업수행중단', STATUS_COLORS.stopped],
 ];
 
 function pad(n) {
@@ -67,34 +69,36 @@ function useInterval(callback, delayMs) {
   }, [delayMs]);
 }
 
-// pid가 있으면 지금 살아있는 세션이라 status(idle/busy)를 믿는다. pid가 없으면 마지막 state로 분류한다.
+// 공식 문서(code.claude.com agent-view): state=blocked는 pid 유무와 무관하게 "사용자의 응답·승인·로그인 등
+// 사용자만 해결할 수 있는 것을 기다리는 상태"이고, status=waiting도 열린 프롬프트 대기라서 둘 다 먼저
+// 사용자응답대기로 분류한다. 턴을 끝내고 다음 지시를 기다리는 상태는 blocked가 아니라 done이다.
+// 그 밖에는 pid가 있으면 지금 살아있는 세션이라 status(idle/busy)를 믿고, pid가 없으면 마지막 state로 분류한다.
 // dev-session-launch SKILL.md 실측: state(특히 blocked)는 조회 순간의 스냅샷일 뿐이라 늦게 반영될 수 있다.
 //
-// status===idle이면서 state===working인 pid 보유 세션은 "작업중"도 "대기"도 아닌 별도 부류다
+// status===idle이면서 state===working인 pid 보유 세션은 "작업수행중"도 "작업지시대기"도 아닌 별도 부류(순환작업대기)다
 // (실측 2026-10-29: patrol-master처럼 /loop로 긴 주기(예: 25분)마다 짧게 깨어나는 세션은 그
 // 틱 순간에만 busy이고 나머지 대부분은 idle/working으로 남는다 — 10초 폴링으로는 busy를
 // 거의 못 잡아 항상 "대기"로만 보여서, 지금 루프를 돌리는 중인데도 작업중 묶음에 전혀 안
 // 잡히는 문제가 있었다). architect-master도 같은 조건에 걸릴 수 있어 이름이 아니라 이
 // status/state 조합으로 판정한다.
 function categorize(rec) {
+  if (rec.state === 'blocked' || rec.status === 'waiting') return 'blocked';
   if (rec.pid) {
     if (rec.status === 'busy') return 'working';
     if (rec.status === 'idle' && rec.state === 'working') return 'resident';
     return 'idle';
   }
-  if (rec.state === 'blocked') return 'blocked';
   if (rec.state === 'failed') return 'failed';
+  if (rec.state === 'done') return 'done';
   return 'stopped';
 }
 
-// 같은 이름이 여러 레코드로 남을 수 있다(세션 재개 등). startedAt이 가장 큰 것만 쓴다.
-function dedupeByName(records) {
-  const latestByName = new Map();
-  for (const rec of records) {
-    const prev = latestByName.get(rec.name);
-    if (!prev || rec.startedAt > prev.startedAt) latestByName.set(rec.name, rec);
-  }
-  return [...latestByName.values()];
+// 같은 이름이 여러 레코드로 남을 수 있다(세션 재개 등). 하나로 합치지 않고 모두 보여주되, 이름이 겹치는 것은
+// 레코드 id 앞 4글자를 붙여 구분한다(예: contract-developer[8055]). 이름이 하나뿐이면 그대로 둔다.
+function disambiguateNames(records) {
+  const counts = new Map();
+  for (const rec of records) counts.set(rec.name, (counts.get(rec.name) || 0) + 1);
+  return records.map((rec) => (counts.get(rec.name) > 1 ? { ...rec, name: `${rec.name}[${String(rec.id).slice(0, 4)}]` } : rec));
 }
 
 // claude agents --json에는 "마지막으로 뭘 했는지" 시각이 없다(startedAt은 세션을 처음 띄운 시각일 뿐).
@@ -183,7 +187,8 @@ function Board() {
   const { isRawModeSupported } = useStdin();
   useInput(
     (input, key) => {
-      if (input !== 'n' || !byCategory) return;
+      // 한글 입력기가 켜져 있으면 n 키가 'ㅜ'로 들어온다. 대문자 N(Shift/CapsLock)도 같이 받는다.
+      if (!NEXT_KEYS.has(input) || !byCategory) return;
       setCursor((prev) => nextCursor(byCategory, prev));
     },
     { isActive: isRawModeSupported },
@@ -192,7 +197,7 @@ function Board() {
   async function poll() {
     try {
       const records = await fetchAgents();
-      const enriched = await enrichWithActivity(dedupeByName(records));
+      const enriched = await enrichWithActivity(disambiguateNames(records));
       setByCategory(groupAgents(enriched));
       setLastUpdated(nowHms());
       setLastError(null);
@@ -232,7 +237,7 @@ function Board() {
     ? nonEmptyGroups.flatMap(([key, label, color]) => {
         const entries = byCategory.get(key);
         if (key !== effectiveKey) {
-          return [{ text: `[${label}] (${entries.length}개, n으로 펼치기)`, color, dim: true }];
+          return [{ text: `[${label}] (${entries.length}개)`, color, dim: true }];
         }
         if (pageSize <= 0) {
           return [{ text: `[${label}] (${entries.length}개, 화면 높이 부족해 숨김)`, color, dim: true }];
