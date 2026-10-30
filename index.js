@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import stringWidth from 'string-width';
 import { STATUS_COLORS, resolveTheme } from './theme.js';
+import { disambiguateNames } from './names.js';
 
 const h = React.createElement;
 
@@ -93,14 +94,6 @@ function categorize(rec) {
   return 'stopped';
 }
 
-// 같은 이름이 여러 레코드로 남을 수 있다(세션 재개 등). 하나로 합치지 않고 모두 보여주되, 이름이 겹치는 것은
-// 레코드 id 앞 4글자를 붙여 구분한다(예: contract-developer[8055]). 이름이 하나뿐이면 그대로 둔다.
-function disambiguateNames(records) {
-  const counts = new Map();
-  for (const rec of records) counts.set(rec.name, (counts.get(rec.name) || 0) + 1);
-  return records.map((rec) => (counts.get(rec.name) > 1 ? { ...rec, name: `${rec.name}[${String(rec.id).slice(0, 4)}]` } : rec));
-}
-
 // claude agents --json에는 "마지막으로 뭘 했는지" 시각이 없다(startedAt은 세션을 처음 띄운 시각일 뿐).
 // 대신 그 세션의 transcript 파일(~/.claude/projects/<cwd를 인코딩한 폴더>/<sessionId>.jsonl)의
 // mtime을 "마지막 활동 시각"의 대리값으로 쓴다 — 실측: 이 폴더명은 cwd에서 영숫자·하이픈이 아닌
@@ -139,7 +132,7 @@ async function enrichWithActivity(records) {
 function groupAgents(records) {
   const byCategory = new Map(GROUPS.map(([key]) => [key, []]));
   for (const rec of records) {
-    byCategory.get(categorize(rec)).push({ name: rec.name, elapsed: formatElapsed(rec.lastActivityMs) });
+    byCategory.get(categorize(rec)).push({ name: rec.name, elapsed: formatElapsed(rec.lastActivityMs), bold: Boolean(rec.isRepresentative) });
   }
   for (const entries of byCategory.values()) entries.sort((a, b) => a.name.localeCompare(b.name));
   return byCategory;
@@ -248,7 +241,7 @@ function Board() {
         const headerText = totalPages > 1 ? `[${label}] (${page + 1}/${totalPages}페이지)` : `[${label}]`;
         return [
           { text: headerText, color },
-          ...pageEntries.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color })),
+          ...pageEntries.map((e) => ({ text: `  ${e.name}(${e.elapsed})`, color, name: e.name, bold: e.bold, elapsed: e.elapsed })),
         ];
       })
     : [{ text: '[...] 불러오는 중', color: STATUS_COLORS.suffix }]
@@ -298,7 +291,17 @@ function Board() {
         hotkeyHint ? h(Text, { color: STATUS_COLORS.suffix }, hotkeyHint) : null,
       ),
       h(Box, { height: 1 }),
-      ...groupLines.map((g, i) => h(Text, { key: `g${i}`, color: g.color, dimColor: Boolean(g.dim) }, g.text)),
+      ...groupLines.map((g, i) =>
+        g.name === undefined
+          ? h(Text, { key: `g${i}`, color: g.color, dimColor: Boolean(g.dim) }, g.text)
+          : h(
+              Text,
+              { key: `g${i}`, color: g.color },
+              '  ',
+              h(Text, { bold: g.bold }, g.name),
+              `(${g.elapsed})`,
+            ),
+      ),
     ),
     h(
       Box,
